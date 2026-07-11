@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Papavero — ჯავშნები</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #EFE6D6; }
+  #root { min-height: 100%; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #2B262233; border-radius: 8px; }
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* მობილურის ადაპტაციის დამატებითი სტილები */
+  @media (max-width: 768px) {
+    .header-container { flex-direction: column; gap: 16px; align-items: flex-start !important; padding: 16px !important; }
+    .tabs-container { width: 100%; overflow-x: auto; display: flex; white-space: nowrap; padding-bottom: 4px; }
+    .tabs-container button { flex: 1; text-align: center; justify-content: center; }
+    .calendar-grid-layout { grid-template-columns: 1fr !important; gap: 24px !important; }
+    .app-padding { padding: 12px !important; }
+    .modal-content-layout { display: flex; flex-direction: column; }
+    .modal-split-fields { grid-template-columns: 1fr !important; gap: 12px !important; }
+  }
+</style>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const h = React.createElement;
+const { useState, useEffect, useCallback, useMemo } = React;
+
+const COLORS = {
+  ink: '#2B2622',
+  parchment: '#EFE6D6',
+  parchmentDeep: '#E4D8C3',
+  poppy: '#C1272D',
+  poppyDeep: '#8F1D22',
+  olive: '#6B7B4F',
+  gold: '#B08D57',
+  cream: '#FBF7EE',
+};
+
+const WEEKDAYS = ['ორშ', 'სამშ', 'ოთხშ', 'ხუთშ', 'პარ', 'შაბ', 'კვ'];
+const MONTHS = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი', 'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
+
+function isoDate(d) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+function todayIso() { return isoDate(new Date()); }
+
+function PoppyMark(props) {
+  const size = props.size || 32;
+  const svg = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M32 34c0-10-8-20-4-28 4 6 8 10 8 18" stroke="' + COLORS.olive + '" stroke-width="3" stroke-linecap="round" fill="none" />' +
+    '<g transform="translate(32,30)">' +
+    '<path d="M0 -14 C 8 -14 12 -4 6 2 C 0 -2 0 -8 0 -14 Z" fill="' + COLORS.poppy + '" />' +
+    '<path d="M0 -14 C -8 -14 -12 -4 -6 2 C 0 -2 0 -8 0 -14 Z" fill="' + COLORS.poppy + '" />' +
+    '<path d="M0 -2 C 10 -2 14 8 4 12 C -2 6 -2 2 0 -2 Z" fill="' + COLORS.poppyDeep + '" />' +
+    '<path d="M0 -2 C -10 -2 -14 8 -4 12 C 2 6 2 2 0 -2 Z" fill="' + COLORS.poppyDeep + '" />' +
+    '<circle cx="0" cy="-1" r="4.5" fill="' + COLORS.ink + '" />' +
+    '</g></svg>';
+  return h('div', { style: { lineHeight: 0 }, dangerouslySetInnerHTML: { __html: svg } });
+}
+
+async function callAPI(webAppUrl, action, payload) {
+  payload = payload || {};
+  const res = await fetch(webAppUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action: action }, payload)),
+  });
+  const json = await res.json();
+  if (json && json.error) throw new Error(json.error);
+  return json;
+}
+
+function Button(props) {
+  const variant = props.variant || 'primary';
+  const type = props.type || 'button';
+  const base = {
+    fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 600, borderRadius: 8,
+    padding: '10px 16px', cursor: props.disabled ? 'default' : 'pointer', border: 'none',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'transform .12s, opacity .12s',
+    opacity: props.disabled ? 0.5 : 1,
+  };
+  const variants = {
+    primary: { background: COLORS.poppy, color: '#fff' },
+    ghost: { background: 'transparent', color: COLORS.ink, border: '1px solid ' + COLORS.ink + '33' },
+    danger: { background: 'transparent', color: COLORS.poppyDeep, border: '1px solid ' + COLORS.poppyDeep + '55' },
+    olive: { background: COLORS.olive, color: '#fff' },
+  };
+  return h('button', {
+    type: type, onClick: props.onClick, disabled: props.disabled,
+    onMouseDown: function (e) { if (!props.disabled) e.currentTarget.style.transform = 'scale(0.97)'; },
+    onMouseUp: function (e) { e.currentTarget.style.transform = 'scale(1)'; },
+    onMouseLeave: function (e) { e.currentTarget.style.transform = 'scale(1)'; },
+    style: Object.assign({}, base, variants[variant], props.style || {}),
+  }, props.children);
+}
+
+function Field(props) {
+  return h('label', { style: { display: 'flex', flexDirection: 'column', gap: 6, fontFamily: 'Inter, sans-serif' } },
+    h('span', { style: { fontSize: 12, fontWeight: 600, color: COLORS.ink, opacity: 0.65, letterSpacing: 0.3, textTransform: 'uppercase' } }, props.label),
+    props.children
+  );
+}
+
+const inputStyle = {
+  fontFamily: 'Inter, sans-serif', fontSize: 14, padding: '9px 11px', borderRadius: 7,
+  border: '1px solid ' + COLORS.ink + '2a', background: COLORS.cream, color: COLORS.ink, outline: 'none', width: '100%',
+};
+const navBtnStyle = { width: 30, height: 30, borderRadius: 7, border: '1px solid ' + COLORS.ink + '22', background: COLORS.cream, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const iconBtnStyle = { width: 26, height: 26, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: COLORS.ink, opacity: 0.55, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 };
+
+function Modal(props) {
+  return h('div', {
+    style: { position: 'fixed', inset: 0, background: '#2b2622aa', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 12 },
+    onClick: props.onClose,
+  },
+    h('div', {
+      onClick: function (e) { e.stopPropagation(); },
+      style: { background: COLORS.parchment, borderRadius: 14, padding: 20, width: props.wide ? 560 : 420, maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px #0004' },
+    },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 } },
+        h('h2', { style: { fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600, color: COLORS.ink, margin: 0 } }, props.title),
+        h('button', { onClick: props.onClose, style: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.ink, opacity: 0.6, fontSize: 18 } }, '✕')
+      ),
+      props.children
+    )
+  );
+}
+
+function PapaveroApp() {
+  const [webAppUrl, setWebAppUrl] = useState('');
+  const [restaurantEmail, setRestaurantEmail] = useState('');
+  const [chefEmail, setChefEmail] = useState('');
+  const [restaurantName, setRestaurantName] = useState('Papavero');
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  const [reservations, setReservations] = useState([]);
+  const [menu, setMenu] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [savedNotice, setSavedNotice] = useState('');
+
+  const [view, setView] = useState('calendar');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayIso());
+
+  const [showResModal, setShowResModal] = useState(false);
+  const [editingRes, setEditingRes] = useState(null);
+  const [showMenuModal, setShowMenuModal] = useState(false);
+  const [editingMenuItem, setEditingMenuItem] = useState(null);
+
+  const [settingsDraft, setSettingsDraft] = useState({ webAppUrl: '', restaurantEmail: '', chefEmail: '', restaurantName: 'Papavero' });
+
+  useEffect(function () {
+    try {
+      const raw = localStorage.getItem('papavero-config');
+      if (raw) {
+        const cfg = JSON.parse(raw);
+        setWebAppUrl(cfg.webAppUrl || '');
+        setRestaurantEmail(cfg.restaurantEmail || '');
+        setChefEmail(cfg.chefEmail || '');
+        setRestaurantName(cfg.restaurantName || 'Papavero');
+        setSettingsDraft(cfg);
+      }
+    } catch (e) {}
+    setConfigLoaded(true);
+  }, []);
+
+  const fetchAll = useCallback(async function (url) {
+    setLoading(true); setError('');
+    try {
+      const data = await callAPI(url, 'getAll');
+      const res = (data.reservations || []).map(function (r) {
+        let items = [];
+        try { items = JSON.parse(r.MenuItems || '[]'); } catch (e) {}
+        return Object.assign({}, r, { MenuItems: items });
+      });
+      setReservations(res);
+      setMenu(data.menu || []);
+    } catch (e) {
+      setError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(function () {
+    if (configLoaded && webAppUrl) fetchAll(webAppUrl);
+  }, [configLoaded, webAppUrl, fetchAll]);
+
+  function flashSaved(msg) { setSavedNotice(msg); setTimeout(function () { setSavedNotice(''); }, 2200); }
+
+  async function sendTestEmail() {
+    if (!webAppUrl) { setError('ჯერ შეინახე Web App URL პარამეტრებში'); return; }
+    setLoading(true); setError('');
+    try {
+      await callAPI(webAppUrl, 'sendTestEmail', {});
+      flashSaved('სატესტო მეილი გაიგზავნა');
+    } catch (e) { setError('ვერ გაიგზავნა: ' + e.message); }
+    finally { setLoading(false); }
+  }
+
+  async function saveSettings() {
+    const cfg = Object.assign({}, settingsDraft);
+    localStorage.setItem('papavero-config', JSON.stringify(cfg));
+    setWebAppUrl(cfg.webAppUrl); setRestaurantEmail(cfg.restaurantEmail); setChefEmail(cfg.chefEmail); setRestaurantName(cfg.restaurantName);
+    if (cfg.webAppUrl) {
+      try {
+        await callAPI(cfg.webAppUrl, 'updateSettings', { data: { restaurantEmail: cfg.restaurantEmail, chefEmail: cfg.chefEmail, restaurantName: cfg.restaurantName } });
+        fetchAll(cfg.webAppUrl);
+      } catch (e) { setError('პარამეტრები შენახულია ლოკალურად, მაგრამ სერვერზე ჩაწერა ვერ მოხერხდა: ' + e.message); }
+    }
+    flashSaved('პარამეტრები შენახულია');
+  }
+
+  async function submitReservation(form) {
+    setLoading(true); setError('');
+    try {
+      if (editingRes) {
+        await callAPI(webAppUrl, 'updateReservation', { data: Object.assign({ id: editingRes.ID }, form) });
+      } else {
+        await callAPI(webAppUrl, 'addReservation', { data: form });
+      }
+      await fetchAll(webAppUrl);
+      setShowResModal(false); setEditingRes(null);
+      flashSaved(editingRes ? 'ჯავშანი განახლდა' : 'ჯავშანი დაემატა');
+    } catch (e) { setError('ვერ შენახულა: ' + e.message); }
+    finally { setLoading(false); }
+  }
+  async function removeReservation(id) {
+    if (!confirm('ნამდვილად გსურთ ამ ჯავშნის წაშლა?')) return;
+    setLoading(true);
+    try { await callAPI(webAppUrl, 'deleteReservation', { id: id }); await fetchAll(webAppUrl); }
+    catch (e) { setError('ვერ წაიშალა: ' + e.message); }
+    finally { setLoading(false); }
+  }
+  async function toggleCancel(res) {
+    const status = res.Status === 'cancelled' ? 'confirmed' : 'cancelled';
+    try { await callAPI(webAppUrl, 'updateReservation', { data: { id: res.ID, status: status } }); await fetchAll(webAppUrl); }
+    catch (e) { setError(e.message); }
+  }
+
+  async function submitMenuItem(form) {
+    setLoading(true); setError('');
+    try {
+      if (editingMenuItem) await callAPI(webAppUrl, 'updateMenuItem', { data: Object.assign({ id: editingMenuItem.ID }, form) });
+      else await callAPI(webAppUrl, 'addMenuItem', { data: form });
+      await fetchAll(webAppUrl);
+      setShowMenuModal(false); setEditingMenuItem(null);
+      flashSaved(editingMenuItem ? 'კერძი განახლდა' : 'კერძი დაემატა');
+    } catch (e) { setError('ვერ შენახულა: ' + e.message); }
+    finally { setLoading(false); }
+  }
+  async function removeMenuItem(id) {
+    if (!confirm('ნამდვილად გსურთ ამ კერძის წაშლა მენიუდან?')) return;
+    setLoading(true);
+    try { await callAPI(webAppUrl, 'deleteMenuItem', { id: id }); await fetchAll(webAppUrl); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  const monthGrid = useMemo(function () {
+    const y = currentMonth.getFullYear(), m = currentMonth.getMonth();
+    const first = new Date(y, m, 1);
+    const startOffset = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(y, m, d));
+    return cells;
+  }, [currentMonth]);
+
+  const resByDate = useMemo(function () {
+    const map = {};
+    reservations.forEach(function (r) {
+      const d = r.Date;
+      const key = typeof d === 'string' ? d.slice(0, 10) : isoDate(new Date(d));
+      map[key] = map[key] || [];
+      map[key].push(r);
+    });
+    return map;
+  }, [reservations]);
+
+  const dayReservations = (resByDate[selectedDate] || []).slice().sort(function (a, b) { return (a.Time || '').localeCompare(b.Time || ''); });
+
+  const menuByCategory = useMemo(function () {
+    const groups = {};
+    menu.forEach(function (m) {
+      const c = m.Category || 'სხვა';
+      groups[c] = groups[c] || [];
+      groups[c].push(m);
+    });
+    return groups;
+  }, [menu]);
+
+  if (!configLoaded) return null;
+
+  const tabs = [['calendar', '📅', 'კალენდარი'], ['menu', '🍽️', 'მენიუ'], ['settings', '⚙️', 'პარამეტრები']];
+
+  return h('div', { style: { fontFamily: 'Inter, sans-serif', background: COLORS.parchment, minHeight: '100vh', color: COLORS.ink } },
+    h('div', { className: 'header-container', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px 16px', borderBottom: '1px solid ' + COLORS.ink + '1a' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+        h(PoppyMark, { size: 34 }),
+        h('div', null,
+          h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 24, fontWeight: 700, letterSpacing: 0.3 } }, restaurantName),
+          h('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5, opacity: 0.55, fontWeight: 600 } }, 'ჯავშნების წიგნი')
+        )
+      ),
+      h('div', { className: 'tabs-container', style: { display: 'flex', gap: 6 } },
+        tabs.map(function (t) {
+          const key = t[0], icon = t[1], label = t[2];
+          return h('button', {
+            key: key, onClick: function () { setView(key); },
+            style: {
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 13px', borderRadius: 8,
+              border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: 13, fontWeight: 600,
+              background: view === key ? COLORS.ink : 'transparent', color: view === key ? COLORS.parchment : COLORS.ink,
+              opacity: view === key ? 1 : 0.6,
+            },
+          }, icon + ' ' + label);
+        })
+      )
+    ),
+
+    !webAppUrl ? h('div', { style: { margin: 20, padding: 16, background: '#fff8ec', border: '1px solid ' + COLORS.gold + '55', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-start' } },
+      h('span', { style: { flexShrink: 0 } }, '⚠️'),
+      h('div', { style: { fontSize: 13.5, lineHeight: 1.5 } }, 'მონაცემები ჯერ არ არის დაკავშირებული Google Sheet-თან. გადადი პარამეტრები-ში და ჩასვი შენი Apps Script Web App-ის ბმული.')
+    ) : null,
+
+    error ? h('div', { style: { margin: '10px 20px 0', padding: 12, background: '#fdecec', border: '1px solid ' + COLORS.poppy + '44', borderRadius: 10, fontSize: 13, color: COLORS.poppyDeep } }, error) : null,
+
+    h('div', { className: 'app-padding', style: { padding: 20 } },
+      view === 'calendar' ? h(CalendarView, {
+        currentMonth: currentMonth, setCurrentMonth: setCurrentMonth,
+        monthGrid: monthGrid, resByDate: resByDate,
+        selectedDate: selectedDate, setSelectedDate: setSelectedDate,
+        dayReservations: dayReservations,
+        onAdd: function () { setEditingRes(null); setShowResModal(true); },
+        onEdit: function (r) { setEditingRes(r); setShowResModal(true); },
+        onDelete: removeReservation, onToggleCancel: toggleCancel,
+        loading: loading, disabled: !webAppUrl,
+      }) : null,
+      view === 'menu' ? h(MenuView, {
+        menuByCategory: menuByCategory,
+        onAdd: function () { setEditingMenuItem(null); setShowMenuModal(true); },
+        onEdit: function (m) { setEditingMenuItem(m); setShowMenuModal(true); },
+        onDelete: removeMenuItem, disabled: !webAppUrl,
+      }) : null,
+      view === 'settings' ? h(SettingsView, { draft: settingsDraft, setDraft: setSettingsDraft, onSave: saveSettings, onSendTest: sendTestEmail, loading: loading }) : null
+    ),
+
+    savedNotice ? h('div', { style: { position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: COLORS.ink, color: COLORS.parchment, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, zIndex: 60 } }, '✓ ' + savedNotice) : null,
+
+    showResModal ? h(ReservationModal, {
+      initial: editingRes, menu: menu, defaultDate: selectedDate,
+      onClose: function () { setShowResModal(false); setEditingRes(null); },
+      onSubmit: submitReservation, loading: loading,
+    }) : null,
+    showMenuModal ? h(MenuItemModal, {
+      initial: editingMenuItem,
+      onClose: function () { setShowMenuModal(false); setEditingMenuItem(null); },
+      onSubmit: submitMenuItem, loading: loading,
+    }) : null
+  );
+}
+
+function CalendarView(p) {
+  const today = todayIso();
+  return h('div', { className: 'calendar-grid-layout', style: { display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 } },
+    h('div', null,
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 } },
+        h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 600 } }, MONTHS[p.currentMonth.getMonth()] + ' ' + p.currentMonth.getFullYear()),
+        h('div', { style: { display: 'flex', gap: 4 } },
+          h('button', { onClick: function () { p.setCurrentMonth(new Date(p.currentMonth.getFullYear(), p.currentMonth.getMonth() - 1, 1)); }, style: navBtnStyle }, '◀'),
+          h('button', { onClick: function () { p.setCurrentMonth(new Date()); }, style: Object.assign({}, navBtnStyle, { width: 'auto', padding: '0 12px', fontSize: 12, fontWeight: 600 }) }, 'დღეს'),
+          h('button', { onClick: function () { p.setCurrentMonth(new Date(p.currentMonth.getFullYear(), p.currentMonth.getMonth() + 1, 1)); }, style: navBtnStyle }, '▶')
+        )
+      ),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 } },
+        WEEKDAYS.map(function (w) { return h('div', { key: w, style: { fontSize: 11, fontWeight: 700, textAlign: 'center', opacity: 0.5, textTransform: 'uppercase' } }, w); })
+      ),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 } },
+        p.monthGrid.map(function (d, i) {
+          if (!d) return h('div', { key: i });
+          const iso = isoDate(d);
+          const count = (p.resByDate[iso] || []).filter(function (r) { return r.Status !== 'cancelled'; }).length;
+          const isSelected = iso === p.selectedDate;
+          const isToday = iso === today;
+          return h('button', {
+            key: i, onClick: function () { p.setSelectedDate(iso); },
+            style: {
+              aspectRatio: '1', borderRadius: 9, border: isToday ? '1.5px solid ' + COLORS.poppy : '1px solid ' + COLORS.ink + '18',
+              background: isSelected ? COLORS.ink : COLORS.cream, color: isSelected ? COLORS.parchment : COLORS.ink,
+              cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+            },
+          },
+            h('span', { style: { fontSize: 13, fontWeight: 600 } }, d.getDate()),
+            count > 0 ? h('span', { style: { fontSize: 9.5, fontWeight: 700, background: COLORS.poppy, color: '#fff', borderRadius: 20, padding: '1px 6px' } }, count) : null
+          );
+        })
+      )
+    ),
+    h('div', null,
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
+        h('div', { style: { fontSize: 14, fontWeight: 700 } }, new Date(p.selectedDate).toLocaleDateString('ka-GE', { weekday: 'long', day: 'numeric', month: 'long' })),
+        h(Button, { onClick: p.onAdd, disabled: p.disabled, style: { padding: '7px 11px' } }, '➕ ჯავშანი')
+      ),
+      p.loading ? h('div', { style: { fontSize: 13, opacity: 0.6, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 } }, h('span', { className: 'spin' }, '⏳'), ' იტვირთება…') : null,
+      (!p.loading && p.dayReservations.length === 0) ? h('div', { style: { fontSize: 13, opacity: 0.55, padding: '30px 0', textAlign: 'center', background: COLORS.cream, borderRadius: 10, border: '1px solid ' + COLORS.ink + '08' } }, 'ამ დღეს ჯავშანი არ არის') : null,
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+        p.dayReservations.map(function (r) {
+          return h('div', {
+            key: r.ID,
+            style: { background: COLORS.cream, borderRadius: 10, padding: 12, border: '1px solid ' + COLORS.ink + '14', opacity: r.Status === 'cancelled' ? 0.5 : 1 },
+          },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+              h('div', { style: { flex: 1, paddingRight: 8 } },
+                h('div', { style: { fontSize: 14, fontWeight: 700, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, wordBreak: 'break-word' } },
+                  '⏰ ' + r.Time + ' · ' + r.CustomerName,
+                  r.Status === 'cancelled' ? h('span', { style: { fontSize: 10, background: COLORS.poppy, color: '#fff', borderRadius: 6, padding: '2px 6px' } }, 'გაუქმებული') : null
+                ),
+                h('div', { style: { fontSize: 12.5, opacity: 0.75, marginTop: 4 } }, '👥 ' + r.GuestCount + ' სტუმარი'),
+                r.Email ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 3, wordBreak: 'break-all' } }, '✉ ' + r.Email) : null,
+                r.Phone ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 2 } }, '☎ ' + r.Phone) : null,
+                r.Notes ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 4, wordBreak: 'break-word' } }, '📝 ' + r.Notes) : null,
+                (Array.isArray(r.MenuItems) && r.MenuItems.length > 0) ? h('div', { style: { fontSize: 12, opacity: 0.7, marginTop: 4, wordBreak: 'break-word' } }, '🍽 ' + r.MenuItems.map(function (mi) { return mi.name + (mi.qty > 1 ? ' ×' + mi.qty : ''); }).join(', ')) : null
+              ),
+              h('div', { style: { display: 'flex', gap: 4, flexShrink: 0 } },
+                h('button', { onClick: function () { p.onEdit(r); }, style: iconBtnStyle }, '✎'),
+                h('button', { onClick: function () { p.onDelete(r.ID); }, style: iconBtnStyle }, '🗑')
+              )
+            ),
+            h('button', {
+              onClick: function () { p.onToggleCancel(r); },
+              style: { marginTop: 10, fontSize: 11.5, fontWeight: 600, background: 'none', border: '1px solid ' + COLORS.ink + '22', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', color: COLORS.ink, opacity: 0.7 },
+            }, r.Status === 'cancelled' ? 'დაბრუნება' : 'გაუქმება')
+          );
+        })
+      )
+    )
+  );
+}
+
+function MenuView(p) {
+  const categories = Object.keys(p.menuByCategory);
+  return h('div', null,
+    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 } },
+      h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 600 } }, 'მენიუ'),
+      h(Button, { onClick: p.onAdd, disabled: p.disabled }, '➕ კერძის დამატება')
+    ),
+    categories.length === 0 ? h('div', { style: { fontSize: 13.5, opacity: 0.6, padding: '30px 0', textAlign: 'center' } }, 'მენიუ ჯერ ცარიელია — დაამატე პირველი კერძი ზემოთა ღილაკით.') : null,
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
+      categories.map(function (cat) {
+        return h('div', { key: cat },
+          h('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.55, marginBottom: 8 } }, cat),
+          h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 } },
+            p.menuByCategory[cat].map(function (item) {
+              return h('div', { key: item.ID, style: { background: COLORS.cream, borderRadius: 10, padding: 12, border: '1px solid ' + COLORS.ink + '14', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' } },
+                h('div', null,
+                  h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 } },
+                    h('div', { style: { fontSize: 14, fontWeight: 700, wordBreak: 'break-word' } }, item.Name),
+                    h('div', { style: { display: 'flex', gap: 2, flexShrink: 0 } },
+                      h('button', { onClick: function () { p.onEdit(item); }, style: iconBtnStyle }, '✎'),
+                      h('button', { onClick: function () { p.onDelete(item.ID); }, style: iconBtnStyle }, '🗑')
+                    )
+                  ),
+                  item.Description ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 4, wordBreak: 'break-word' } }, item.Description) : null
+                ),
+                (item.Price !== '' && item.Price !== undefined) ? h('div', { style: { fontSize: 13, fontWeight: 700, color: COLORS.poppyDeep, marginTop: 8 } }, item.Price + ' ₾') : null
+              );
+            })
+          )
+        );
+      })
+    )
+  );
+}
+
+function SettingsView(p) {
+  return h('div', { style: { maxWidth: '100%', width: 480 } },
+    h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 600, marginBottom: 16 } }, 'პარამეტრები'),
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+      h(Field, { label: 'Apps Script Web App URL' },
+        h('input', { style: inputStyle, placeholder: 'https://script.google.com/macros/s/.../exec', value: p.draft.webAppUrl, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { webAppUrl: e.target.value })); } })
+      ),
+      h(Field, { label: 'რესტორნის მეილი (შეხსენებები აქ მოვა)' },
+        h('input', { type: 'email', style: inputStyle, placeholder: 'restaurant.papavero@gmail.com', value: p.draft.restaurantEmail, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { restaurantEmail: e.target.value })); } })
+      ),
+      h(Field, { label: 'შეფის მეილი (შეხსენებები აქაც მოვა)' },
+        h('input', { type: 'email', style: inputStyle, placeholder: 'chef@example.com', value: p.draft.chefEmail, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { chefEmail: e.target.value })); } })
+      ),
+      h(Field, { label: 'რესტორნის სახელი' },
+        h('input', { style: inputStyle, value: p.draft.restaurantName, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { restaurantName: e.target.value })); } })
+      ),
+      h('div', { style: { marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8 } },
+        h(Button, { onClick: p.onSave, variant: 'olive', style: { flex: '1 1 auto' } }, 'შენახვა'),
+        h(Button, { onClick: p.onSendTest, variant: 'ghost', disabled: p.loading, style: { flex: '1 1 auto' } }, p.loading ? 'იგზავნება…' : '✉ სატესტო მეილი')
+      )
+    ),
+    h('div', { style: { fontSize: 12, opacity: 0.55, marginTop: 20, lineHeight: 1.6 } }, 'Web App URL მიიღება Google Apps Script-ის დეპლოის შემდეგ. ახალი ჯავშნის შეტყობინება და დღით/დილით შეხსენებები მოვა ორივე ზემოთ მითითებულ მისამართზე.')
+  );
+}
+
+function ReservationModal(p) {
+  const initial = p.initial;
+  const [date, setDate] = useState(initial && initial.Date ? String(initial.Date).slice(0, 10) : p.defaultDate);
+  const [time, setTime] = useState((initial && initial.Time) || '19:00');
+  const [guestCount, setGuestCount] = useState((initial && initial.GuestCount) || 2);
+  const [customerName, setCustomerName] = useState((initial && initial.CustomerName) || '');
+  const [phone, setPhone] = useState((initial && initial.Phone) || '');
+  const [notes, setNotes] = useState((initial && initial.Notes) || '');
+  const [menuSel, setMenuSel] = useState(function () {
+    const map = {};
+    ((initial && initial.MenuItems) || []).forEach(function (mi) { map[mi.id] = mi.qty; });
+    return map;
+  });
+  const [formError, setFormError] = useState('');
+  const [menuSearch, setMenuSearch] = useState('');
+
+  const filteredMenu = useMemo(function () {
+    const q = menuSearch.trim().toLowerCase();
+    if (!q) return p.menu;
+    return p.menu.filter(function (item) {
+      return (item.Name || '').toLowerCase().indexOf(q) > -1 ||
+        (item.Category || '').toLowerCase().indexOf(q) > -1;
+    });
+  }, [p.menu, menuSearch]);
+
+  function toggleItem(item) {
+    setMenuSel(function (prev) {
+      const next = Object.assign({}, prev);
+      if (next[item.ID]) delete next[item.ID]; else next[item.ID] = 1;
+      return next;
+    });
+  }
+  function setQty(item, qty) {
+    setMenuSel(function (prev) { const next = Object.assign({}, prev); next[item.ID] = Math.max(1, qty); return next; });
+  }
+
+  function handleSubmit() {
+    if (!date || !time || !customerName) { setFormError('თარიღი, დრო და სტუმრის სახელი სავალდებულოა'); return; }
+    const menuItems = Object.keys(menuSel).map(function (id) {
+      const m = p.menu.find(function (x) { return x.ID === id; });
+      return { id: id, name: m ? m.Name : '', qty: menuSel[id] };
+    });
+    p.onSubmit({ date: date, time: time, guestCount: Number(guestCount), customerName: customerName, phone: phone, notes: notes, menuItems: menuItems });
+  }
+
+  return h(Modal, { title: initial ? 'ჯავშნის რედაქტირება' : 'ახალი ჯავშანი', onClose: p.onClose, wide: true },
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+      h('div', { className: 'modal-split-fields', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+        h(Field, { label: 'თარიღი' }, h('input', { type: 'date', style: inputStyle, value: date, onChange: function (e) { setDate(e.target.value); } })),
+        h(Field, { label: 'დრო' }, h('input', { type: 'time', style: inputStyle, value: time, onChange: function (e) { setTime(e.target.value); } }))
+      ),
+      h('div', { className: 'modal-split-fields', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+        h(Field, { label: 'სტუმრების რაოდენობა' }, h('input', { type: 'number', min: 1, style: inputStyle, value: guestCount, onChange: function (e) { setGuestCount(e.target.value); } })),
+        h(Field, { label: 'ტელეფონი (არასავალდებულო)' }, h('input', { style: inputStyle, value: phone, onChange: function (e) { setPhone(e.target.value); } }))
+      ),
+      h(Field, { label: 'სტუმრის სახელი' }, h('input', { style: inputStyle, value: customerName, onChange: function (e) { setCustomerName(e.target.value); } })),
+      h(Field, { label: 'შენიშვნა' }, h('textarea', { style: Object.assign({}, inputStyle, { resize: 'vertical', minHeight: 50 }), value: notes, onChange: function (e) { setNotes(e.target.value); } })),
+      p.menu.length > 0 ? h(Field, { label: 'მენიუდან არჩევა' },
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+          h('input', {
+            style: inputStyle, placeholder: '🔍 მოძებნე კერძი სახელით ან კატეგორიით…',
+            value: menuSearch, onChange: function (e) { setMenuSearch(e.target.value); },
+          }),
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid ' + COLORS.ink + '1a', borderRadius: 8, padding: 8 } },
+            filteredMenu.length === 0 ? h('div', { style: { fontSize: 12.5, opacity: 0.55, padding: '4px 2px' } }, 'ვერაფერი მოიძებნა') : null,
+            filteredMenu.map(function (item) {
+              return h('div', { key: item.ID, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } },
+                h('input', { type: 'checkbox', checked: !!menuSel[item.ID], onChange: function () { toggleItem(item); } }),
+                h('span', { style: { flex: 1, wordBreak: 'break-word' } }, item.Name),
+                menuSel[item.ID] ? h('input', { type: 'number', min: 1, value: menuSel[item.ID], onChange: function (e) { setQty(item, Number(e.target.value)); }, style: Object.assign({}, inputStyle, { width: 50, padding: '4px 6px', flexShrink: 0 }) }) : null
+              );
+            })
+          )
+        )
+      ) : h('div', { style: { fontSize: 12, opacity: 0.55 } }, 'მენიუ ცარიელია — დაამატე კერძები "მენიუ" ჩანართში.'),
+      formError ? h('div', { style: { fontSize: 12.5, color: COLORS.poppyDeep } }, formError) : null,
+      h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 } },
+        h(Button, { variant: 'ghost', onClick: p.onClose }, 'გაუქმება'),
+        h(Button, { onClick: handleSubmit, disabled: p.loading }, p.loading ? 'ინახება…' : 'შენახვა')
+      )
+    )
+  );
+}
+
+function MenuItemModal(p) {
+  const initial = p.initial;
+  const [name, setName] = useState((initial && initial.Name) || '');
+  const [category, setCategory] = useState((initial && initial.Category) || '');
+  const [price, setPrice] = useState(initial && initial.Price !== undefined ? initial.Price : '');
+  const [description, setDescription] = useState((initial && initial.Description) || '');
+  const [formError, setFormError] = useState('');
+
+  function handleSubmit() {
+    if (!name) { setFormError('კერძის სახელი სავალდებულოა'); return; }
+    p.onSubmit({ name: name, category: category, price: price, description: description });
+  }
+
+  return h(Modal, { title: initial ? 'კერძის რედაქტირება' : 'ახალი კერძი', onClose: p.onClose },
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+      h(Field, { label: 'სახელი' }, h('input', { style: inputStyle, value: name, onChange: function (e) { setName(e.target.value); } })),
+      h(Field, { label: 'კატეგორია (მაგ. სალათები, მთავარი კერძები)' }, h('input', { style: inputStyle, value: category, onChange: function (e) { setCategory(e.target.value); } })),
+      h(Field, { label: 'ფასი (₾)' }, h('input', { type: 'number', style: inputStyle, value: price, onChange: function (e) { setPrice(e.target.value); } })),
+      h(Field, { label: 'აღწერა' }, h('textarea', { style: Object.assign({}, inputStyle, { resize: 'vertical', minHeight: 50 }), value: description, onChange: function (e) { setDescription(e.target.value); } })),
+      formError ? h('div', { style: { fontSize: 12.5, color: COLORS.poppyDeep } }, formError) : null,
+      h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 } },
+        h(Button, { variant: 'ghost', onClick: p.onClose }, 'გაუქმება'),
+        h(Button, { onClick: handleSubmit, disabled: p.loading }, p.loading ? 'ინახება…' : 'შენახვა')
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(PapaveroApp));
+</script>
+</body>
+</html>
