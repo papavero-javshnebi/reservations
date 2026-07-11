@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Papavero — ჯავშნები</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght=0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght=400;500;600;700&display=swap');
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; background: #EFE6D6; }
   #root { min-height: 100%; }
@@ -14,15 +14,16 @@
   .spin { animation: spin 1s linear infinite; display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* მობილურის ადაპტაციის დამატებითი სტილები */
+  /* მობილურის ადაპტაციის და მხოლოდ ნახვის რეჟიმის (Viewer) სტილები */
   @media (max-width: 768px) {
     .header-container { flex-direction: column; gap: 16px; align-items: flex-start !important; padding: 16px !important; }
     .tabs-container { width: 100%; overflow-x: auto; display: flex; white-space: nowrap; padding-bottom: 4px; }
     .tabs-container button { flex: 1; text-align: center; justify-content: center; }
     .calendar-grid-layout { grid-template-columns: 1fr !important; gap: 24px !important; }
     .app-padding { padding: 12px !important; }
-    .modal-content-layout { display: flex; flex-direction: column; }
-    .modal-split-fields { grid-template-columns: 1fr !important; gap: 12px !important; }
+    
+    /* ვმალავთ სამართავ ელემენტებს მობილურზე */
+    .admin-only-btn, .action-buttons-cell, .settings-tab-btn { display: none !important; }
   }
 </style>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -33,6 +34,8 @@
 <script>
 const h = React.createElement;
 const { useState, useEffect, useCallback, useMemo } = React;
+
+const HARDCODED_URL = "https://script.google.com/macros/s/AKfycbyKQnbWIJ-URxNuiMJp1mMMUCYBpwrLOKyqYFovvnmNqLfion0JFjP23Lv7aahRj5Ztng/exec";
 
 const COLORS = {
   ink: '#2B2622',
@@ -68,9 +71,9 @@ function PoppyMark(props) {
   return h('div', { style: { lineHeight: 0 }, dangerouslySetInnerHTML: { __html: svg } });
 }
 
-async function callAPI(webAppUrl, action, payload) {
+async function callAPI(action, payload) {
   payload = payload || {};
-  const res = await fetch(webAppUrl, {
+  const res = await fetch(HARDCODED_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action }, payload)),
@@ -96,7 +99,7 @@ function Button(props) {
     olive: { background: COLORS.olive, color: '#fff' },
   };
   return h('button', {
-    type: type, onClick: props.onClick, disabled: props.disabled,
+    type: type, onClick: props.onClick, disabled: props.disabled, className: props.className,
     onMouseDown: function (e) { if (!props.disabled) e.currentTarget.style.transform = 'scale(0.97)'; },
     onMouseUp: function (e) { e.currentTarget.style.transform = 'scale(1)'; },
     onMouseLeave: function (e) { e.currentTarget.style.transform = 'scale(1)'; },
@@ -137,12 +140,7 @@ function Modal(props) {
 }
 
 function PapaveroApp() {
-  const [webAppUrl, setWebAppUrl] = useState('');
-  const [restaurantEmail, setRestaurantEmail] = useState('');
-  const [chefEmail, setChefEmail] = useState('');
   const [restaurantName, setRestaurantName] = useState('Papavero');
-  const [configLoaded, setConfigLoaded] = useState(false);
-
   const [reservations, setReservations] = useState([]);
   const [menu, setMenu] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -158,27 +156,12 @@ function PapaveroApp() {
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState(null);
 
-  const [settingsDraft, setSettingsDraft] = useState({ webAppUrl: '', restaurantEmail: '', chefEmail: '', restaurantName: 'Papavero' });
+  const [settingsDraft, setSettingsDraft] = useState({ restaurantEmail: '', chefEmail: '', restaurantName: 'Papavero' });
 
-  useEffect(function () {
-    try {
-      const raw = localStorage.getItem('papavero-config');
-      if (raw) {
-        const cfg = JSON.parse(raw);
-        setWebAppUrl(cfg.webAppUrl || '');
-        setRestaurantEmail(cfg.restaurantEmail || '');
-        setChefEmail(cfg.chefEmail || '');
-        setRestaurantName(cfg.restaurantName || 'Papavero');
-        setSettingsDraft(cfg);
-      }
-    } catch (e) {}
-    setConfigLoaded(true);
-  }, []);
-
-  const fetchAll = useCallback(async function (url) {
+  const fetchAll = useCallback(async function () {
     setLoading(true); setError('');
     try {
-      const data = await callAPI(url, 'getAll');
+      const data = await callAPI('getAll');
       const res = (data.reservations || []).map(function (r) {
         let items = [];
         try { items = JSON.parse(r.MenuItems || '[]'); } catch (e) {}
@@ -186,6 +169,14 @@ function PapaveroApp() {
       });
       setReservations(res);
       setMenu(data.menu || []);
+      if (data.settings) {
+        setRestaurantName(data.settings.restaurantName || 'Papavero');
+        setSettingsDraft({
+          restaurantEmail: data.settings.restaurantEmail || '',
+          chefEmail: data.settings.chefEmail || '',
+          restaurantName: data.settings.restaurantName || 'Papavero'
+        });
+      }
     } catch (e) {
       setError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + e.message);
     } finally {
@@ -194,43 +185,43 @@ function PapaveroApp() {
   }, []);
 
   useEffect(function () {
-    if (configLoaded && webAppUrl) fetchAll(webAppUrl);
-  }, [configLoaded, webAppUrl, fetchAll]);
+    fetchAll();
+    // პერიოდული განახლება ყოველ 2 წუთში, რომ ეკრანზე მუდამ ახალი ჯავშნები ჩანდეს
+    const interval = setInterval(fetchAll, 120000);
+    return function() { clearInterval(interval); };
+  }, [fetchAll]);
 
   function flashSaved(msg) { setSavedNotice(msg); setTimeout(function () { setSavedNotice(''); }, 2200); }
 
   async function sendTestEmail() {
-    if (!webAppUrl) { setError('ჯერ შეინახე Web App URL პარამეტრებში'); return; }
     setLoading(true); setError('');
     try {
-      await callAPI(webAppUrl, 'sendTestEmail', {});
+      await callAPI('sendTestEmail', {});
       flashSaved('სატესტო მეილი გაიგზავნა');
     } catch (e) { setError('ვერ გაიგზავნა: ' + e.message); }
     finally { setLoading(false); }
   }
 
   async function saveSettings() {
-    const cfg = Object.assign({}, settingsDraft);
-    localStorage.setItem('papavero-config', JSON.stringify(cfg));
-    setWebAppUrl(cfg.webAppUrl); setRestaurantEmail(cfg.restaurantEmail); setChefEmail(cfg.chefEmail); setRestaurantName(cfg.restaurantName);
-    if (cfg.webAppUrl) {
-      try {
-        await callAPI(cfg.webAppUrl, 'updateSettings', { data: { restaurantEmail: cfg.restaurantEmail, chefEmail: cfg.chefEmail, restaurantName: cfg.restaurantName } });
-        fetchAll(cfg.webAppUrl);
-      } catch (e) { setError('პარამეტრები შენახულია ლოკალურად, მაგრამ სერვერზე ჩაწერა ვერ მოხერხდა: ' + e.message); }
-    }
-    flashSaved('პარამეტრები შენახულია');
+    try {
+      setLoading(true);
+      await callAPI('updateSettings', { data: settingsDraft });
+      setRestaurantName(settingsDraft.restaurantName);
+      flashSaved('პარამეტრები სერვერზე შენახულია');
+      fetchAll();
+    } catch (e) { setError('ჩაწერა ვერ მოხერხდა: ' + e.message); }
+    finally { setLoading(false); }
   }
 
   async function submitReservation(form) {
     setLoading(true); setError('');
     try {
       if (editingRes) {
-        await callAPI(webAppUrl, 'updateReservation', { data: Object.assign({ id: editingRes.ID }, form) });
+        await callAPI('updateReservation', { data: Object.assign({ id: editingRes.ID }, form) });
       } else {
-        await callAPI(webAppUrl, 'addReservation', { data: form });
+        await callAPI('addReservation', { data: form });
       }
-      await fetchAll(webAppUrl);
+      await fetchAll();
       setShowResModal(false); setEditingRes(null);
       flashSaved(editingRes ? 'ჯავშანი განახლდა' : 'ჯავშანი დაემატა');
     } catch (e) { setError('ვერ შენახულა: ' + e.message); }
@@ -239,22 +230,22 @@ function PapaveroApp() {
   async function removeReservation(id) {
     if (!confirm('ნამდვილად გსურთ ამ ჯავშნის წაშლა?')) return;
     setLoading(true);
-    try { await callAPI(webAppUrl, 'deleteReservation', { id: id }); await fetchAll(webAppUrl); }
+    try { await callAPI('deleteReservation', { id: id }); await fetchAll(); }
     catch (e) { setError('ვერ წაიშალა: ' + e.message); }
     finally { setLoading(false); }
   }
   async function toggleCancel(res) {
     const status = res.Status === 'cancelled' ? 'confirmed' : 'cancelled';
-    try { await callAPI(webAppUrl, 'updateReservation', { data: { id: res.ID, status: status } }); await fetchAll(webAppUrl); }
+    try { await callAPI('updateReservation', { data: { id: res.ID, status: status } }); await fetchAll(); }
     catch (e) { setError(e.message); }
   }
 
   async function submitMenuItem(form) {
     setLoading(true); setError('');
     try {
-      if (editingMenuItem) await callAPI(webAppUrl, 'updateMenuItem', { data: Object.assign({ id: editingMenuItem.ID }, form) });
-      else await callAPI(webAppUrl, 'addMenuItem', { data: form });
-      await fetchAll(webAppUrl);
+      if (editingMenuItem) await callAPI('updateMenuItem', { data: Object.assign({ id: editingMenuItem.ID }, form) });
+      else await callAPI('addMenuItem', { data: form });
+      await fetchAll();
       setShowMenuModal(false); setEditingMenuItem(null);
       flashSaved(editingMenuItem ? 'კერძი განახლდა' : 'კერძი დაემატა');
     } catch (e) { setError('ვერ შენახულა: ' + e.message); }
@@ -263,7 +254,7 @@ function PapaveroApp() {
   async function removeMenuItem(id) {
     if (!confirm('ნამდვილად გსურთ ამ კერძის წაშლა მენიუდან?')) return;
     setLoading(true);
-    try { await callAPI(webAppUrl, 'deleteMenuItem', { id: id }); await fetchAll(webAppUrl); }
+    try { await callAPI('deleteMenuItem', { id: id }); await fetchAll(); }
     catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }
@@ -302,8 +293,6 @@ function PapaveroApp() {
     return groups;
   }, [menu]);
 
-  if (!configLoaded) return null;
-
   const tabs = [['calendar', '📅', 'კალენდარი'], ['menu', '🍽️', 'მენიუ'], ['settings', '⚙️', 'პარამეტრები']];
 
   return h('div', { style: { fontFamily: 'Inter, sans-serif', background: COLORS.parchment, minHeight: '100vh', color: COLORS.ink } },
@@ -312,7 +301,7 @@ function PapaveroApp() {
         h(PoppyMark, { size: 34 }),
         h('div', null,
           h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 24, fontWeight: 700, letterSpacing: 0.3 } }, restaurantName),
-          h('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5, opacity: 0.55, fontWeight: 600 } }, 'ჯავშნების წიგნი')
+          h('div', { style: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5, opacity: 0.55, fontWeight: 600 } }, 'ჯავშნების მონიტორი')
         )
       ),
       h('div', { className: 'tabs-container', style: { display: 'flex', gap: 6 } },
@@ -320,6 +309,7 @@ function PapaveroApp() {
           const key = t[0], icon = t[1], label = t[2];
           return h('button', {
             key: key, onClick: function () { setView(key); },
+            className: key === 'settings' ? 'settings-tab-btn' : '',
             style: {
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 13px', borderRadius: 8,
               border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: 13, fontWeight: 600,
@@ -330,11 +320,6 @@ function PapaveroApp() {
         })
       )
     ),
-
-    !webAppUrl ? h('div', { style: { margin: 20, padding: 16, background: '#fff8ec', border: '1px solid ' + COLORS.gold + '55', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-start' } },
-      h('span', { style: { flexShrink: 0 } }, '⚠️'),
-      h('div', { style: { fontSize: 13.5, lineHeight: 1.5 } }, 'მონაცემები ჯერ არ არის დაკავშირებული Google Sheet-თან. გადადი პარამეტრები-ში და ჩასვი შენი Apps Script Web App-ის ბმული.')
-    ) : null,
 
     error ? h('div', { style: { margin: '10px 20px 0', padding: 12, background: '#fdecec', border: '1px solid ' + COLORS.poppy + '44', borderRadius: 10, fontSize: 13, color: COLORS.poppyDeep } }, error) : null,
 
@@ -347,13 +332,13 @@ function PapaveroApp() {
         onAdd: function () { setEditingRes(null); setShowResModal(true); },
         onEdit: function (r) { setEditingRes(r); setShowResModal(true); },
         onDelete: removeReservation, onToggleCancel: toggleCancel,
-        loading: loading, disabled: !webAppUrl,
+        loading: loading,
       }) : null,
       view === 'menu' ? h(MenuView, {
         menuByCategory: menuByCategory,
         onAdd: function () { setEditingMenuItem(null); setShowMenuModal(true); },
         onEdit: function (m) { setEditingMenuItem(m); setShowMenuModal(true); },
-        onDelete: removeMenuItem, disabled: !webAppUrl,
+        onDelete: removeMenuItem,
       }) : null,
       view === 'settings' ? h(SettingsView, { draft: settingsDraft, setDraft: setSettingsDraft, onSave: saveSettings, onSendTest: sendTestEmail, loading: loading }) : null
     ),
@@ -412,9 +397,9 @@ function CalendarView(p) {
     h('div', null,
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
         h('div', { style: { fontSize: 14, fontWeight: 700 } }, new Date(p.selectedDate).toLocaleDateString('ka-GE', { weekday: 'long', day: 'numeric', month: 'long' })),
-        h(Button, { onClick: p.onAdd, disabled: p.disabled, style: { padding: '7px 11px' } }, '➕ ჯავშანი')
+        h(Button, { onClick: p.onAdd, className: 'admin-only-btn', style: { padding: '7px 11px' } }, '➕ ჯავშანი')
       ),
-      p.loading ? h('div', { style: { fontSize: 13, opacity: 0.6, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 } }, h('span', { className: 'spin' }, '⏳'), ' იტვირთება…') : null,
+      p.loading ? h('div', { style: { fontSize: 13, opacity: 0.6, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 } }, h('span', { className: 'spin' }, '⏳'), ' ახლდება…') : null,
       (!p.loading && p.dayReservations.length === 0) ? h('div', { style: { fontSize: 13, opacity: 0.55, padding: '30px 0', textAlign: 'center', background: COLORS.cream, borderRadius: 10, border: '1px solid ' + COLORS.ink + '08' } }, 'ამ დღეს ჯავშანი არ არის') : null,
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
         p.dayReservations.map(function (r) {
@@ -429,18 +414,18 @@ function CalendarView(p) {
                   r.Status === 'cancelled' ? h('span', { style: { fontSize: 10, background: COLORS.poppy, color: '#fff', borderRadius: 6, padding: '2px 6px' } }, 'გაუქმებული') : null
                 ),
                 h('div', { style: { fontSize: 12.5, opacity: 0.75, marginTop: 4 } }, '👥 ' + r.GuestCount + ' სტუმარი'),
-                r.Email ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 3, wordBreak: 'break-all' } }, '✉ ' + r.Email) : null,
                 r.Phone ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 2 } }, '☎ ' + r.Phone) : null,
                 r.Notes ? h('div', { style: { fontSize: 12, opacity: 0.65, marginTop: 4, wordBreak: 'break-word' } }, '📝 ' + r.Notes) : null,
                 (Array.isArray(r.MenuItems) && r.MenuItems.length > 0) ? h('div', { style: { fontSize: 12, opacity: 0.7, marginTop: 4, wordBreak: 'break-word' } }, '🍽 ' + r.MenuItems.map(function (mi) { return mi.name + (mi.qty > 1 ? ' ×' + mi.qty : ''); }).join(', ')) : null
               ),
-              h('div', { style: { display: 'flex', gap: 4, flexShrink: 0 } },
+              h('div', { className: 'action-buttons-cell', style: { display: 'flex', gap: 4, flexShrink: 0 } },
                 h('button', { onClick: function () { p.onEdit(r); }, style: iconBtnStyle }, '✎'),
                 h('button', { onClick: function () { p.onDelete(r.ID); }, style: iconBtnStyle }, '🗑')
               )
             ),
             h('button', {
               onClick: function () { p.onToggleCancel(r); },
+              className: 'action-buttons-cell',
               style: { marginTop: 10, fontSize: 11.5, fontWeight: 600, background: 'none', border: '1px solid ' + COLORS.ink + '22', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', color: COLORS.ink, opacity: 0.7 },
             }, r.Status === 'cancelled' ? 'დაბრუნება' : 'გაუქმება')
           );
@@ -455,9 +440,9 @@ function MenuView(p) {
   return h('div', null,
     h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 } },
       h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 600 } }, 'მენიუ'),
-      h(Button, { onClick: p.onAdd, disabled: p.disabled }, '➕ კერძის დამატება')
+      h(Button, { onClick: p.onAdd, className: 'admin-only-btn' }, '➕ კერძის დამატება')
     ),
-    categories.length === 0 ? h('div', { style: { fontSize: 13.5, opacity: 0.6, padding: '30px 0', textAlign: 'center' } }, 'მენიუ ჯერ ცარიელია — დაამატე პირველი კერძი ზემოთა ღილაკით.') : null,
+    categories.length === 0 ? h('div', { style: { fontSize: 13.5, opacity: 0.6, padding: '30px 0', textAlign: 'center' } }, 'მენიუ ცარიელია') : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
       categories.map(function (cat) {
         return h('div', { key: cat },
@@ -468,7 +453,7 @@ function MenuView(p) {
                 h('div', null,
                   h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 } },
                     h('div', { style: { fontSize: 14, fontWeight: 700, wordBreak: 'break-word' } }, item.Name),
-                    h('div', { style: { display: 'flex', gap: 2, flexShrink: 0 } },
+                    h('div', { className: 'action-buttons-cell', style: { display: 'flex', gap: 2, flexShrink: 0 } },
                       h('button', { onClick: function () { p.onEdit(item); }, style: iconBtnStyle }, '✎'),
                       h('button', { onClick: function () { p.onDelete(item.ID); }, style: iconBtnStyle }, '🗑')
                     )
@@ -487,15 +472,12 @@ function MenuView(p) {
 
 function SettingsView(p) {
   return h('div', { style: { maxWidth: '100%', width: 480 } },
-    h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 600, marginBottom: 16 } }, 'პარამეტრები'),
+    h('div', { style: { fontFamily: 'Fraunces, serif', fontSize: 19, fontWeight: 600, marginBottom: 16 } }, 'სისტემური პარამეტრები'),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
-      h(Field, { label: 'Apps Script Web App URL' },
-        h('input', { style: inputStyle, placeholder: 'https://script.google.com/macros/s/.../exec', value: p.draft.webAppUrl, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { webAppUrl: e.target.value })); } })
+      h(Field, { label: 'რესტორნის მეილი' },
+        h('input', { type: 'email', style: inputStyle, placeholder: 'restaurant@example.com', value: p.draft.restaurantEmail, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { restaurantEmail: e.target.value })); } })
       ),
-      h(Field, { label: 'რესტორნის მეილი (შეხსენებები აქ მოვა)' },
-        h('input', { type: 'email', style: inputStyle, placeholder: 'restaurant.papavero@gmail.com', value: p.draft.restaurantEmail, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { restaurantEmail: e.target.value })); } })
-      ),
-      h(Field, { label: 'შეფის მეილი (შეხსენებები აქაც მოვა)' },
+      h(Field, { label: 'შეფის მეილი' },
         h('input', { type: 'email', style: inputStyle, placeholder: 'chef@example.com', value: p.draft.chefEmail, onChange: function (e) { p.setDraft(Object.assign({}, p.draft, { chefEmail: e.target.value })); } })
       ),
       h(Field, { label: 'რესტორნის სახელი' },
@@ -505,8 +487,7 @@ function SettingsView(p) {
         h(Button, { onClick: p.onSave, variant: 'olive', style: { flex: '1 1 auto' } }, 'შენახვა'),
         h(Button, { onClick: p.onSendTest, variant: 'ghost', disabled: p.loading, style: { flex: '1 1 auto' } }, p.loading ? 'იგზავნება…' : '✉ სატესტო მეილი')
       )
-    ),
-    h('div', { style: { fontSize: 12, opacity: 0.55, marginTop: 20, lineHeight: 1.6 } }, 'Web App URL მიიღება Google Apps Script-ის დეპლოის შემდეგ. ახალი ჯავშნის შეტყობინება და დღით/დილით შეხსენებები მოვა ორივე ზემოთ მითითებულ მისამართზე.')
+    )
   );
 }
 
@@ -563,18 +544,17 @@ function ReservationModal(p) {
       ),
       h('div', { className: 'modal-split-fields', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
         h(Field, { label: 'სტუმრების რაოდენობა' }, h('input', { type: 'number', min: 1, style: inputStyle, value: guestCount, onChange: function (e) { setGuestCount(e.target.value); } })),
-        h(Field, { label: 'ტელეფონი (არასავალდებულო)' }, h('input', { style: inputStyle, value: phone, onChange: function (e) { setPhone(e.target.value); } }))
+        h(Field, { label: 'ტელეფონი' }, h('input', { style: inputStyle, value: phone, onChange: function (e) { setPhone(e.target.value); } }))
       ),
       h(Field, { label: 'სტუმრის სახელი' }, h('input', { style: inputStyle, value: customerName, onChange: function (e) { setCustomerName(e.target.value); } })),
       h(Field, { label: 'შენიშვნა' }, h('textarea', { style: Object.assign({}, inputStyle, { resize: 'vertical', minHeight: 50 }), value: notes, onChange: function (e) { setNotes(e.target.value); } })),
       p.menu.length > 0 ? h(Field, { label: 'მენიუდან არჩევა' },
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
           h('input', {
-            style: inputStyle, placeholder: '🔍 მოძებნე კერძი სახელით ან კატეგორიით…',
+            style: inputStyle, placeholder: '🔍 მოძებნე კერძი…',
             value: menuSearch, onChange: function (e) { setMenuSearch(e.target.value); },
           }),
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid ' + COLORS.ink + '1a', borderRadius: 8, padding: 8 } },
-            filteredMenu.length === 0 ? h('div', { style: { fontSize: 12.5, opacity: 0.55, padding: '4px 2px' } }, 'ვერაფერი მოიძებნა') : null,
             filteredMenu.map(function (item) {
               return h('div', { key: item.ID, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 } },
                 h('input', { type: 'checkbox', checked: !!menuSel[item.ID], onChange: function () { toggleItem(item); } }),
@@ -584,7 +564,7 @@ function ReservationModal(p) {
             })
           )
         )
-      ) : h('div', { style: { fontSize: 12, opacity: 0.55 } }, 'მენიუ ცარიელია — დაამატე კერძები "მენიუ" ჩანართში.'),
+      ) : null,
       formError ? h('div', { style: { fontSize: 12.5, color: COLORS.poppyDeep } }, formError) : null,
       h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 } },
         h(Button, { variant: 'ghost', onClick: p.onClose }, 'გაუქმება'),
@@ -610,7 +590,7 @@ function MenuItemModal(p) {
   return h(Modal, { title: initial ? 'კერძის რედაქტირება' : 'ახალი კერძი', onClose: p.onClose },
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
       h(Field, { label: 'სახელი' }, h('input', { style: inputStyle, value: name, onChange: function (e) { setName(e.target.value); } })),
-      h(Field, { label: 'კატეგორია (მაგ. სალათები, მთავარი კერძები)' }, h('input', { style: inputStyle, value: category, onChange: function (e) { setCategory(e.target.value); } })),
+      h(Field, { label: 'კატეგორია' }, h('input', { style: inputStyle, value: category, onChange: function (e) { setCategory(e.target.value); } })),
       h(Field, { label: 'ფასი (₾)' }, h('input', { type: 'number', style: inputStyle, value: price, onChange: function (e) { setPrice(e.target.value); } })),
       h(Field, { label: 'აღწერა' }, h('textarea', { style: Object.assign({}, inputStyle, { resize: 'vertical', minHeight: 50 }), value: description, onChange: function (e) { setDescription(e.target.value); } })),
       formError ? h('div', { style: { fontSize: 12.5, color: COLORS.poppyDeep } }, formError) : null,
